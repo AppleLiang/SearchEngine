@@ -1,0 +1,284 @@
+package ir.assignments.three.b;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.StringTokenizer;
+
+public class NDCG implements Common {
+	public static void calculateNDCG() {
+		HashMap<String, Integer> urlDocidMap = NDCG.buildUrlDocidMap();
+		System.out.println("Building Map Finished");
+		// queries stores the search queries
+		ArrayList<String> queries = new ArrayList<String>();
+		try {
+			BufferedReader rd = new BufferedReader(new FileReader(queriesPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				queries.add(line);
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		int numberOfQueries = queries.size();
+		// this is used to store the result of google search
+		
+//		for (int i = 0; i < numberOfQueries; i++) {
+//			gsArrayList.add(new ArrayList<Integer>(N));
+//			try {
+//				googleResult = GoogleSearch.search(queries.get(i) + " site:ics.uci.edu");
+//			} catch (IOException e) {
+//				// TODO Auto-generated catch block
+//				e.printStackTrace();
+//			}
+//			for(int j = 0; j < googleResult.size(); j++) {
+//				int tempDocId = 0;
+//				if (urlDocidMap.containsKey(googleResult.get(j))) {
+//					tempDocId = urlDocidMap.get(googleResult.get(j));
+//				}
+//				gsArrayList.get(i).add(tempDocId);
+//			}
+//		}
+		ArrayList<ArrayList<Integer>> gsArrayList = new ArrayList<ArrayList<Integer>>(numberOfQueries);
+		ArrayList<Integer> allResult = new ArrayList<Integer>();
+		BufferedReader br;
+		try {
+			br = new BufferedReader(new FileReader(googleSearchPath));
+			String line;
+			while ((line = br.readLine()) != null) {
+				allResult.add(urlDocidMap.get(line));
+			}
+		} 
+		catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		for(int i = 0; i < numberOfQueries; i++) {
+			ArrayList<Integer> googleResult = new ArrayList<Integer>(N);
+			for(int j = 0; j < N; j++) {
+				googleResult.add(allResult.get(i*N + j));
+			}
+			gsArrayList.add(googleResult);
+		}
+		System.out.println("Google Search Finished");
+		// this is used to store the result of our search
+		ArrayList<QueryScoreEntry[]> result = QueryScore.calculateVectorScoreWithTitle(queries);
+		ArrayList<ArrayList<Integer>> osArrayList = new ArrayList<ArrayList<Integer>>(numberOfQueries);
+		for (int i = 0; i < numberOfQueries; i++) {
+			ArrayList<Integer> tempArrayList = new ArrayList<Integer>(N);
+			for(int j = 0; j < N; j++) {
+				int tempDocId = result.get(i)[j].docid;
+				tempArrayList.add(tempDocId);
+			}
+			osArrayList.add(tempArrayList);
+		}
+		System.out.println("Our Search Finished");
+		// calculate NDCG
+		ArrayList<ArrayList<Double>> NDCG = new ArrayList<ArrayList<Double>>(numberOfQueries);
+		ArrayList<Integer> googleRank = new ArrayList<Integer>(N);
+		googleRank.add(5);
+		googleRank.add(4);
+		googleRank.add(3);
+		googleRank.add(2);
+		googleRank.add(1);
+		ArrayList<Double> googleDCG = calculateDCG(googleRank);		
+		for (int i = 0; i < numberOfQueries; i++) {
+			ArrayList<Integer> ourRank = new ArrayList<Integer>(N);
+			ArrayList<Integer> googleDocId = gsArrayList.get(i);
+			ArrayList<Integer> ourDocId = osArrayList.get(i);
+			for (int j = 0; j < N; j++) {
+				if(googleDocId.contains(ourDocId.get(j))) {
+					ourRank.add(googleRank.get(googleDocId.indexOf(ourDocId.get(j))));
+				}
+				else {
+					ourRank.add(0);
+				}
+			}
+			ArrayList<Double> ourDCG = calculateDCG(ourRank);
+			ArrayList<Double> tempNDCG = new ArrayList<Double>(N);
+			for (int k = 0; k < N; k ++) {
+				tempNDCG.add(ourDCG.get(k) / googleDCG.get(k));
+			}
+			NDCG.add(tempNDCG);
+		}
+		for(int i = 0; i < numberOfQueries; i++) {
+			System.out.println("The NDCG Score of " + queries.get(i) + ": ");
+			for(double tempNDCG : NDCG.get(i)){
+				System.out.print(tempNDCG + "\t");
+			}
+			System.out.println();
+		}
+	}
+	public static HashMap<Integer, String> buildDocidTitleMap(){
+		HashMap<Integer, String>titleMap = new HashMap<Integer, String>();
+		try {
+			BufferedReader rd = new BufferedReader(new FileReader(
+					anchorTextPath));
+			String line;
+			String delim = "~!@#$%^&*()_+<>?,./:\";[]\\{}|-=\t\n\r\f ";
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line, delim);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				String title = "";
+				while (tokenizer.hasMoreElements()) {
+					String word = tokenizer.nextToken().toLowerCase();
+					boolean isWord = true;
+					//test if it is a word
+					for (int i = 0; i < word.length(); i++) {
+						if (word.charAt(i) > 122 || word.charAt(i) < 97) {
+							isWord = false;
+							break;
+						}
+					}
+					if (isWord) {
+						title += word + " ";
+					}
+				}
+				//add an item of docid & anchor text pairs
+				titleMap.put(docid, title);
+			}
+			rd.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return titleMap;
+	}
+	public static HashMap<Integer, Integer> buildDocidNumOfTermsMap() {
+		HashMap<Integer, Integer> docidNumOfTermsMap = new HashMap<Integer, Integer>();
+		BufferedReader rd;
+		try {
+			rd = new BufferedReader(new FileReader(docidNumOfTermsMapPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				int numOfTerms = Integer.parseInt(tokenizer.nextToken());
+				docidNumOfTermsMap.put(docid, numOfTerms);
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return docidNumOfTermsMap;
+	}
+	public static HashMap<Integer, Integer> buildDocidMap() {
+		HashMap<Integer, Integer> docidMap = new HashMap<Integer, Integer>();
+		BufferedReader rd;
+		try {
+			rd = new BufferedReader(new FileReader(docidMapPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				int id = Integer.parseInt(tokenizer.nextToken());
+				docidMap.put(docid, id);
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return docidMap;
+	}
+	// build a docid map to improve searching speed
+	public static HashMap<String, Integer> buildUrlDocidMap() {
+		HashMap<Integer, Integer> docidMap = NDCG.buildDocidMap();
+		// build a url docid map for future use
+		HashMap<String, Integer> urlDocidMap = new HashMap<String, Integer>();
+		BufferedReader rd;
+		try {
+			rd = new BufferedReader(new FileReader(urlPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				if (docidMap.containsKey(docid)) {
+					urlDocidMap.put(tokenizer.nextToken(), docid);
+				}
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return urlDocidMap;
+	}
+	// build a docid url map
+	public static HashMap<Integer, String> buildDocidUrlMap() {
+		HashMap<Integer, Integer> docidMap = NDCG.buildDocidMap();
+		// build a docid url map
+		HashMap<Integer, String> docidUrlMap = new HashMap<Integer, String>();
+		BufferedReader rd;
+		try {
+			rd = new BufferedReader(new FileReader(urlPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				if (docidMap.containsKey(docid)) {
+					docidUrlMap.put(docid, tokenizer.nextToken());
+				}
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return docidUrlMap;
+	}
+	// calculate the DCG
+	public static ArrayList<Double> calculateDCG (ArrayList<Integer> input){
+		ArrayList<Double> result = new ArrayList<Double>(input.size());
+		result.add((double)input.get(0));
+		for (int i = 1; i < input.size(); i++) {
+			double rel = (double)input.get(i);
+			double logRel = Math.log(i + 1) / Math.log((double)2);
+			double temp = result.get(i - 1) + rel/logRel;
+			result.add(temp);
+		}
+		return result;
+	}	
+	public static void main(String[] args) {
+		// TODO Auto-generated method stub
+		NDCG.calculateNDCG();
+	}
+
+}

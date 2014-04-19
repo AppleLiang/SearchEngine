@@ -1,0 +1,121 @@
+package ir.assignments.three.b;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.StringTokenizer;
+
+public class PageRank implements Common {
+	static HashMap<Integer, Integer> docidMap;
+	static HashMap<String, Integer> urlDocidMap;
+
+	public static void buildDocidMap() {
+		docidMap = new HashMap<Integer, Integer>();
+		int j = 0;
+		for (int i = 1; i <= numOfDoc; i++) {
+			String fileName = termsFrePath + "/" + "tf" + i + ".txt";
+			File file = new File(fileName);
+			if (file.exists()) {
+				docidMap.put(i, j);
+				j++;
+			}
+		}
+	}
+	/**
+	 * build a hashmap matching a url to its corresponding docid
+	 */
+	public static void buildUrlDocidMap() {
+		urlDocidMap = new HashMap<String, Integer>();
+		BufferedReader rd;
+		try {
+			rd = new BufferedReader(new FileReader(urlPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				if (docidMap.containsKey(docid)) {
+					urlDocidMap.put(tokenizer.nextToken(), docid);
+				}
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (NumberFormatException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
+
+	public static void buildMatrix() {
+		boolean[][] matrix = new boolean[numOfValidDoc][numOfValidDoc];
+		for (int i = 0; i < numOfValidDoc; i++) {
+			for (int j = 0; j < numOfValidDoc; j++) {
+				matrix[i][j] = false;
+			}
+		}
+		for (int i = 1; i <= numOfDoc; i++) {
+			if (docidMap.containsKey(i)) {
+				int realID = docidMap.get(i);
+				String fileName = outgoingLinkPath + "/" + i + ".txt";
+				try {
+					BufferedReader rd = new BufferedReader(new FileReader(
+							fileName));
+					String line;
+					while ((line = rd.readLine()) != null) {
+						if (urlDocidMap.containsKey(line)) {
+							int realID2 = docidMap.get(urlDocidMap.get(line));
+							matrix[realID][realID2] = true;
+						}
+					}
+					rd.close();
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+
+			}
+		}
+		String outputPath = path + "/matrix/" + ".dat";
+		for (int i = 0; i < numOfValidDoc; i++) {
+			try {
+				BufferedWriter wt = new BufferedWriter(new FileWriter(
+						outputPath));
+				StringBuilder builder = new StringBuilder(3);
+				for (int j = 0; j < numOfValidDoc; j++) {
+					if (matrix[i][j] == true) {
+						//builder
+					} 
+
+				}
+				//remove the last comma
+				builder.deleteCharAt(numOfValidDoc * 2 - 1);
+				wt.write(builder.toString());
+				wt.newLine();
+				wt.close();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+
+			}
+		}
+		
+	}
+
+	public static void main(String args[]) {
+		buildDocidMap();
+		buildUrlDocidMap();
+		buildMatrix();
+	}
+}

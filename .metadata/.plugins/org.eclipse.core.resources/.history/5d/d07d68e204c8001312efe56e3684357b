@@ -1,0 +1,609 @@
+package ir.assignments.three.b;
+
+import ir.assignments.one.a.Frequency;
+
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.StringTokenizer;
+
+public class QueryScore implements Common {
+	HashMap<String, Integer> documentFre;
+	HashMap<String, Double> idfMap;
+	static HashMap<Integer, ArrayList<String>> titleMap;
+	public static final int TFIDF = 0;
+	public static final int TF = 1;
+	public static final int IDF = 2;
+
+
+	/**
+	 * calculate the scores of the series of the queries using only the tf-idf
+	 * score
+	 * 
+	 * @param queries
+	 * @return
+	 */
+	public static ArrayList<QueryScoreEntry[]> calculateTFIDFScore(
+			ArrayList<String> queries) {
+		int numberOfQueries = queries.size();
+		ArrayList<ArrayList<String>> queryTerms = new ArrayList<ArrayList<String>>(
+				numberOfQueries);
+		ArrayList<QueryScoreEntry[]> result = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+
+		for (int i = 0; i < numberOfQueries; i++) {
+			StringTokenizer tokenizer = new StringTokenizer(queries.get(i));
+			ArrayList<String> terms = new ArrayList<String>();
+			while (tokenizer.hasMoreElements()) {
+				terms.add(tokenizer.nextToken().toLowerCase());
+			}
+			queryTerms.add(terms);
+			// result.add(new QueryScoreEntry[N]);
+		}
+
+		// build the initial heap
+		ArrayList<QueryScoreEntry[]> tempArrayList = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		for (int i = 1; i <= N; i++) {
+			HashMap<String, Double> tfidfMap = readIndex(i, TFIDF);
+			if (tfidfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				tempArrayList.add(new QueryScoreEntry[N]);
+				ArrayList<String> terms = queryTerms.get(j);
+				double thisScore = 0.0;
+				for (String term : terms) {
+					if (tfidfMap.containsKey(term)) {
+						thisScore += tfidfMap.get(term);
+					}
+				}
+				tempArrayList.get(j)[i - 1] = new QueryScoreEntry(i, thisScore);
+			}
+		}
+		ArrayList<PseudoHeap> heaps = new ArrayList<PseudoHeap>(numberOfQueries);
+		for (int i = 0; i < numberOfQueries; i++) {
+			heaps.add(new PseudoHeap(tempArrayList.get(i)));
+		}
+
+		// process the rest of the files
+		for (int i = N + 1; i <= numOfDoc; i++) {
+			HashMap<String, Double> tfidfMap = readIndex(i, TFIDF);
+			if (tfidfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				ArrayList<String> terms = queryTerms.get(j);
+				double thisScore = 0.0;
+				for (String term : terms) {
+					if (tfidfMap.containsKey(term)) {
+						thisScore += tfidfMap.get(term);
+					}
+				}
+				// if the current score is larger than the minimum score of the
+				// heap, then replace that min value
+				if (thisScore > heaps.get(j).min().score) {
+					heaps.get(j).replaceMin(new QueryScoreEntry(i, thisScore));
+				}
+			}
+		}
+		// retrieve the result from the heap
+		for (int i = 0; i < numberOfQueries; i++) {
+			result.add(i, heaps.get(i).allEntries());
+		}
+
+		return result;
+	}
+
+	/**
+	 * calculate the scores of the queries using vector score
+	 * 
+	 * @param queries
+	 * @return
+	 */
+	public static ArrayList<QueryScoreEntry[]> calculateVectorScore(
+			ArrayList<String> queries) {
+		int numberOfQueries = queries.size();
+		ArrayList<ArrayList<Frequency>> queryTerms = new ArrayList<ArrayList<Frequency>>(
+				numberOfQueries);
+		ArrayList<QueryScoreEntry[]> result = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		ArrayList<Double> squareRootSumList = new ArrayList<Double>();
+
+		for (int i = 0; i < numberOfQueries; i++) {
+			StringTokenizer tokenizer = new StringTokenizer(queries.get(i));
+			ArrayList<Frequency> terms = new ArrayList<Frequency>();
+			double squareRootSum = 0;
+			while (tokenizer.hasMoreElements()) {
+				boolean isAlreadyIn = false;
+				String termString = tokenizer.nextToken().toLowerCase();
+				for (int j = 0; j < terms.size(); j++) {
+					if (terms.get(j).getText().equals(termString)) {
+						terms.get(j).incrementFrequency();
+						isAlreadyIn = true;
+						break;
+					}
+				}
+				if (!isAlreadyIn) {
+					terms.add(new Frequency(termString, 1));
+				}
+			}
+			for (Frequency f : terms) {
+				squareRootSum += f.getFrequency() * f.getFrequency();
+			}
+			squareRootSumList.add(Math.sqrt(squareRootSum));
+			queryTerms.add(terms);
+		}
+
+		// build the initial heap
+		ArrayList<QueryScoreEntry[]> tempArrayList = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		for (int i = 1; i <= N; i++) {
+			HashMap<String, Double> tfMap = readIndex(i, TF);
+			if (tfMap == null) {
+				continue;
+			}
+			// int docTermNumber = tfMap.size();
+			for (int j = 0; j < numberOfQueries; j++) {
+				tempArrayList.add(new QueryScoreEntry[N]);
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				// below
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					double currentTermTF = term.getFrequency() / squareRootSum;
+					// if the map contains this term, calculate the score
+					if (tfMap.containsKey(term.getText())) {
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				tempArrayList.get(j)[i - 1] = new QueryScoreEntry(i, thisScore);
+			}
+		}
+		ArrayList<PseudoHeap> heaps = new ArrayList<PseudoHeap>(numberOfQueries);
+		for (int i = 0; i < numberOfQueries; i++) {
+			heaps.add(new PseudoHeap(tempArrayList.get(i)));
+		}
+
+		// process the rest of the files
+		for (int i = N + 1; i <= numOfDoc; i++) {
+			HashMap<String, Double> tfMap = readIndex(i, TF);
+			if (tfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					if (tfMap.containsKey(term.getText())) {
+						double currentTermTF = term.getFrequency()
+								/ squareRootSum;
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				// System.out.println(i + "\t" + thisScore);
+				// if the current score is larger than the minimum score of the
+				// heap, then replace that min value
+				if (thisScore > heaps.get(j).min().score) {
+					heaps.get(j).replaceMin(new QueryScoreEntry(i, thisScore));
+				}
+			}
+		}
+		// retrieve the result from the heap
+		for (int i = 0; i < numberOfQueries; i++) {
+			result.add(i, heaps.get(i).allEntries());
+		}
+
+		return result;
+	}
+
+	public static ArrayList<QueryScoreEntry[]> calculateVectorTFIDFScore(
+			ArrayList<String> queries) {
+		int numberOfQueries = queries.size();
+		ArrayList<ArrayList<Frequency>> queryTerms = new ArrayList<ArrayList<Frequency>>(
+				numberOfQueries);
+		ArrayList<QueryScoreEntry[]> result = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		ArrayList<Double> squareRootSumList = new ArrayList<Double>();
+
+		for (int i = 0; i < numberOfQueries; i++) {
+			StringTokenizer tokenizer = new StringTokenizer(queries.get(i));
+			ArrayList<Frequency> terms = new ArrayList<Frequency>();
+			double squareRootSum = 0;
+			while (tokenizer.hasMoreElements()) {
+				boolean isAlreadyIn = false;
+				String termString = tokenizer.nextToken().toLowerCase();
+				for (int j = 0; j < terms.size(); j++) {
+					if (terms.get(j).getText().equals(termString)) {
+						terms.get(j).incrementFrequency();
+						isAlreadyIn = true;
+						break;
+					}
+				}
+				if (!isAlreadyIn) {
+					terms.add(new Frequency(termString, 1));
+				}
+			}
+			for (Frequency f : terms) {
+				squareRootSum += f.getFrequency() * f.getFrequency();
+			}
+			squareRootSumList.add(Math.sqrt(squareRootSum));
+			queryTerms.add(terms);
+		}
+
+		// build the initial heap
+		ArrayList<QueryScoreEntry[]> tempArrayList = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		for (int i = 1; i <= N; i++) {
+			HashMap<String, Double> tfMap = readIndex(i, TFIDF);
+			if (tfMap == null) {
+				continue;
+			}
+			// int docTermNumber = tfMap.size();
+			for (int j = 0; j < numberOfQueries; j++) {
+				tempArrayList.add(new QueryScoreEntry[N]);
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				// below
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					double currentTermTF = term.getFrequency() / squareRootSum;
+					// if the map contains this term, calculate the score
+					if (tfMap.containsKey(term.getText())) {
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				tempArrayList.get(j)[i - 1] = new QueryScoreEntry(i, thisScore);
+			}
+		}
+		ArrayList<PseudoHeap> heaps = new ArrayList<PseudoHeap>(numberOfQueries);
+		for (int i = 0; i < numberOfQueries; i++) {
+			heaps.add(new PseudoHeap(tempArrayList.get(i)));
+		}
+
+		// process the rest of the files
+		for (int i = N + 1; i <= numOfDoc; i++) {
+			HashMap<String, Double> tfMap = readIndex(i, TFIDF);
+			if (tfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					if (tfMap.containsKey(term.getText())) {
+						double currentTermTF = term.getFrequency()
+								/ squareRootSum;
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				// System.out.println(i + "\t" + thisScore);
+				// if the current score is larger than the minimum score of the
+				// heap, then replace that min value
+				if (thisScore > heaps.get(j).min().score) {
+					heaps.get(j).replaceMin(new QueryScoreEntry(i, thisScore));
+				}
+			}
+		}
+		// retrieve the result from the heap
+		for (int i = 0; i < numberOfQueries; i++) {
+			result.add(i, heaps.get(i).allEntries());
+		}
+
+		return result;
+	}
+	/**
+	 * calculate the scores of the queries using vector score also, but take
+	 * anchor text into consideration
+	 * 
+	 * @param queries
+	 * @return
+	 */
+	public static ArrayList<QueryScoreEntry[]> calculateVectorScoreWithTitle(
+			ArrayList<String> queries) {
+		readTitle();
+		int numberOfQueries = queries.size();
+		ArrayList<ArrayList<Frequency>> queryTerms = new ArrayList<ArrayList<Frequency>>(
+				numberOfQueries);
+		ArrayList<QueryScoreEntry[]> result = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		ArrayList<Double> squareRootSumList = new ArrayList<Double>();
+		// initialize buffered reader for tf and docid terms map
+		BufferedReader tfFileReader = null;
+		HashMap<Integer, Integer> docidNumOfTermsMap = new HashMap<Integer, Integer>();
+		try {
+			tfFileReader = new BufferedReader(new FileReader(tfFilePath));
+			docidNumOfTermsMap = NDCG.buildDocidNumOfTermsMap();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		for (int i = 0; i < numberOfQueries; i++) {
+			StringTokenizer tokenizer = new StringTokenizer(queries.get(i));
+			ArrayList<Frequency> terms = new ArrayList<Frequency>();
+			double squareRootSum = 0;
+			while (tokenizer.hasMoreElements()) {
+				boolean isAlreadyIn = false;
+				String termString = tokenizer.nextToken().toLowerCase();
+				for (int j = 0; j < terms.size(); j++) {
+					if (terms.get(j).getText().equals(termString)) {
+						terms.get(j).incrementFrequency();
+						isAlreadyIn = true;
+						break;
+					}
+				}
+				if (!isAlreadyIn) {
+					terms.add(new Frequency(termString, 1));
+				}
+			}
+			for (Frequency f : terms) {
+				squareRootSum += f.getFrequency() * f.getFrequency();
+			}
+			squareRootSumList.add(Math.sqrt(squareRootSum));
+			queryTerms.add(terms);
+		}
+
+		// build the initial heap
+		ArrayList<QueryScoreEntry[]> tempArrayList = new ArrayList<QueryScoreEntry[]>(
+				numberOfQueries);
+		for (int i = 1; i <= N; i++) {
+			//HashMap<String, Double> tfMap = readIndex(i, TF);
+			HashMap<String, Double> tfMap = readTf(i, tfFileReader, docidNumOfTermsMap);
+			if (tfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				tempArrayList.add(new QueryScoreEntry[N]);
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					double currentTermTF = term.getFrequency() / squareRootSum;
+					// if the map contains this term, calculate the score
+					if (tfMap.containsKey(term.getText())) {
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				boolean isTitleContained = checkIsTitleContained(i, terms);
+				tempArrayList.get(j)[i - 1] = new QueryScoreEntry(i, thisScore, isTitleContained);
+			}
+		}
+		ArrayList<PseudoHeap> heaps = new ArrayList<PseudoHeap>(numberOfQueries);
+		for (int i = 0; i < numberOfQueries; i++) {
+			heaps.add(new PseudoHeap(tempArrayList.get(i)));
+		}
+		
+		// process the rest of the files
+		for (int i = N + 1; i <= numOfDoc; i++) {
+			//HashMap<String, Double> tfMap = readIndex(i, TF);
+			HashMap<String, Double> tfMap = readTf(i, tfFileReader, docidNumOfTermsMap);
+			if (tfMap == null) {
+				continue;
+			}
+			for (int j = 0; j < numberOfQueries; j++) {
+				ArrayList<Frequency> terms = queryTerms.get(j);
+				double squareRootSum = squareRootSumList.get(j);
+				double thisScore = 0.0;
+				for (Frequency term : terms) {
+					if (tfMap.containsKey(term.getText())) {
+						double currentTermTF = term.getFrequency()
+								/ squareRootSum;
+						thisScore += currentTermTF
+								* tfMap.get(term.getText());
+					}
+				}
+				boolean isTitleContained = checkIsTitleContained(i, terms);
+				
+				QueryScoreEntry entry = new QueryScoreEntry(i, thisScore, isTitleContained);
+				if (isTitleContained) {
+					System.out.println(entry.toString());
+				}
+				// if the current score is larger than the minimum score of the heap, then replace that min value
+				if (entry.compareTo(heaps.get(j).min()) > 0) {
+					heaps.get(j).replaceMin(entry);
+				}
+			}
+		}
+		try {
+			tfFileReader.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		// retrieve the result from the heap
+		for (int i = 0; i < numberOfQueries; i++) {
+			result.add(i, heaps.get(i).allEntries());
+		}
+
+		return result;
+	}
+
+	/**
+	 * read in a document
+	 * 
+	 * @param docid
+	 * @return a hashmap containing the term-score pairs of that document
+	 */
+	public static HashMap<String, Double> readIndex(int docid, int type) {
+		String filePath;
+		if (type == TFIDF) {
+			filePath = tfidfFolderPath + "/" + "tf-idf" + docid + suffix;
+		} else {
+			filePath = termsFrePath + "/" + "tf" + docid + suffix;
+		}
+		HashMap<String, Double> tfidfMap = new HashMap<String, Double>();
+		try {
+			BufferedReader rd = new BufferedReader(new FileReader(filePath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line);
+				String term = tokenizer.nextToken();
+				// ignore the stored-in-file tf and df value
+				// only read in the tf-idf value
+				tokenizer.nextToken();
+				if (type == TFIDF) {
+					tokenizer.nextToken();
+				}
+				double tfidf = Double.parseDouble(tokenizer.nextToken());
+				tfidfMap.put(term, tfidf);
+			}
+
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// System.out.println("File " + filePath + " doesn't exist!");
+			return null;
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return tfidfMap;
+	}
+	
+	/*
+	 * read tf in a file
+	 */
+	public static HashMap<String, Double> readTf(int docid, BufferedReader tfReader, HashMap<Integer, Integer> docidNumOfTermsMap) {
+		HashMap<String, Double> tfMap = new HashMap<String, Double>();
+		//System.out.println(docid);
+		if(docidNumOfTermsMap.containsKey(docid)) {
+			int numOfTerms = docidNumOfTermsMap.get(docid);
+			int i = 0;
+			while (i < numOfTerms) {
+				String line;
+				try {
+					line = tfReader.readLine();
+					StringTokenizer tokenizer = new StringTokenizer(line);
+					String term = tokenizer.nextToken();
+					tokenizer.nextToken();
+					double tf = Double.parseDouble(tokenizer.nextToken());
+					tfMap.put(term, tf);
+					i++;
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			return tfMap;
+		}
+		else {
+			return null;
+		}
+	}
+
+	/**
+	 * read in the anchor text file
+	 * 
+	 * @return
+	 */
+	public static void readTitle() {
+		titleMap = new HashMap<Integer, ArrayList<String>>();
+		try {
+			BufferedReader rd = new BufferedReader(new FileReader(
+					anchorTextPath));
+			String line;
+			String delim = "~!@#$%^&*()_+<>?,./:\";[]\\{}|-=\t\n\r\f ";
+			while ((line = rd.readLine()) != null) {
+				StringTokenizer tokenizer = new StringTokenizer(line, delim);
+				int docid = Integer.parseInt(tokenizer.nextToken());
+				ArrayList<String> titleTerms = new ArrayList<String>();
+				while (tokenizer.hasMoreElements()) {
+					String word = tokenizer.nextToken().toLowerCase();
+					boolean isWord = true;
+					//test if it is a word
+					for (int i = 0; i < word.length(); i++) {
+						if (word.charAt(i) > 122 || word.charAt(i) < 97) {
+							isWord = false;
+							break;
+						}
+					}
+					if (isWord) {
+						titleTerms.add(word);
+					}
+				}
+				//add an item of docid & anchor text pairs
+				titleMap.put(docid, titleTerms);
+			}
+			rd.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+
+	/**
+	 * check if the given document's anchor text is convolved with the query
+	 * @param docid
+	 * @param query
+	 * @return
+	 */
+	public static boolean checkIsTitleContained(int docid ,ArrayList<Frequency> query){
+		if (!titleMap.containsKey(docid)) {
+			return false;
+		}
+		
+		boolean titleContainQuery = true;
+		boolean queryContainTitle = true;
+		
+		ArrayList<String> titleTerms = titleMap.get(docid);
+		ArrayList<String> queryTerms = new ArrayList<String>(query.size());
+		for (Frequency frequency : query) {
+			String term = frequency.getText();
+			queryTerms.add(term);
+			if (!titleTerms.contains(term)) {
+				titleContainQuery = false;
+			}
+		}
+		if(titleTerms.isEmpty()){
+			queryContainTitle = false;
+		}
+		for(String titleTerm : titleTerms){
+			if (!queryTerms.contains(titleTerm)) {
+				queryContainTitle = false;
+			}
+		}
+		return titleContainQuery || queryContainTitle;
+	}
+	public static void main(String[] args) {
+		// TODO Auto-generated method stub
+		ArrayList<String> queries = new ArrayList<String>();
+		try {
+			BufferedReader rd = new BufferedReader(new FileReader(queriesPath));
+			String line;
+			while ((line = rd.readLine()) != null) {
+				queries.add(line);
+			}
+			rd.close();
+		} catch (FileNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		HashMap<Integer, String> docidUrlMap = NDCG.buildDocidUrlMap();
+		ArrayList<QueryScoreEntry[]> result = calculateVectorScoreWithTitle(queries);
+		int j = 0;
+		for (QueryScoreEntry[] queryScoreEntries : result) {
+			System.out.println("The score for " + queries.get(j) + " is: ");
+			for (int i = 0; i < queryScoreEntries.length; i++) {
+				System.out.println(queryScoreEntries[i].toString(docidUrlMap)
+						+ "\t");
+			}
+			System.out.println();
+			j++;
+		}
+	}
+
+}
